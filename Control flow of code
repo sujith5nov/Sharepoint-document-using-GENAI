@@ -1,0 +1,374 @@
+# Sharepoint-document-using-GENAI
+CODE CONTROL FLOW
+Introduction to the project: 
+This project involves creating a web app to search SharePoint documents using a search bar and category filter. Documents are indexed with their categories via a SharePoint indexer. Search results, limited to the top 10 documents, include summaries. It integrates a function app for querying and handles errors gracefully. 
+Frontend: 
+Frontend has three files: index.html, styles.css and script.js. Html page is the base file that describes the structure of the web page. It is responsible for defining the structure or DOM of any page that can be used for further uses. 
+Style sheets such as CSS (cascading style sheets) are the block of codes that beautify the html page as html page is usually very basic when rendered. 
+Script files such as JavaScript are the files that add interactivity, logic, and dynamic behavior to a webpage such as event listeners, on click functions etc. It is good practice to separate all the three files as the JS file can be reused in multiple html files. It can also help in showing errors and handling them as well.
+Backend: 
+Backend has one file or function app created using Azure Functions. This will handle the data retrieving, embedding and querying documents that are present in SharePoint for us. This file contains a main function and other sub functions that will work behind the scenes and with the help of JS file it will be rendered to the users as well. 
+Explanation of the code: 
+The user enters the query and selects the department from the dropdown menu provided by the html code. document is used by JavaScript to interact with the DOM of the html page. DOM stands for Document Object Model . When the user clicks on the search button, it goes to the JavaScript code and executes the code given below. After triggering the search btn event listener, the results won’t open as it’s set to none and a greeting message that is beside the avatar displays the message. The code is as follows
+document.getElementById("search-btn").addEventListener("click", async function() {
+document.getElementById("results").style.display = "none";
+document.getElementById("greeting-message").innerHTML="<p>Searching...please wait.</p>";
+    const query = document. getElementById("query").value; 
+    const department = document. getElementById("department").value;
+    if (! query) {
+        alert("Please enter a search query.");
+        return;
+    }
+    // Show loader before the API call
+    document.getElementById("loader").style.display = "block";
+What this block of code does is it will check if query and department are a part of the query sent to the backend. After getting the values it will check if the values are present. If both the values are present then it skips this validation and goes to the backend part, however if it finds that the query is missing, then it throws an error to the user saying that the query is missing so please enter a query. Once that is corrected by the user and the search  button is triggered again, it will show a loading … or a loader to the user, an indication that the response to their query is being searched. It then goes to the try block: 
+try {// Make API request to your Azure Function
+Const response = await fetch(`http://localhost:7071/api/HttpTrigger1?query=${query}&department=${department}`);
+It then sends this query to the backend, which in our case is the Azure function or the init.py file. It goes to the main function: 
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        # Get query, category, and department from user request
+        query = req.params.get('query')
+        department = req.params.get('department', None) 
+        if not query:
+            return func.HttpResponse("Please provide a query", status_code=400)
+        # Query the documents
+        embed_query=generate_embedding(embedding_client, query) 
+        documents = query_documents(embed_query, department)
+Once the response is sent to the main function, it retrieves the query using the req.params.get method that is used to retrieve the query from the function link or local development server link that is sent by the JS file. Same happens with the department as well, if at all department is not sent while sending the query then a value of None is assigned, else the specific department value is retrieved. 
+This again checks if the query parameter is present and if it’s missing then renders this line of code: 
+ If not query:
+            return func.HttpResponse("Please provide a query", status_code=400)
+However, if the query parameter is present, then it does not go to the if statement, rather goes to the next block of the code:
+embed_query=generate_embedding(embedding_client, query)
+ documents = query_documents(embed_query, department)
+Once these calls are triggered, these go to the functions that are called here i.e.., generate_ embeddings and query_documents. Here it triggers the classes present for each function i.e.., embedding_client and embed_query by taking the parameters of query and department respectively, as these are to be converted into dense vector form for querying and response purpose using vector search. It then goes to these two sub functions: 
+embedding_client = AzureOpenAI( 
+    azure_endpoint="https://openai-azuretesting.openai.azure.com/", 
+    api_key="d57bdf8c8fd54d98aea4f20e0a183479, 
+    api_version="2024-02-15-preview"
+def generate_embedding(embedding_client, text): 
+    emb = embedding_client.embeddings.create(model="text-embedding-3-small", input=text) 
+    res = json.loads(emb.model_dump_json()) 
+    return res["data"][0]["embedding"]
+First it comes to this function as this forms the crux of any search in Azure ai search  or GenAI. This function will then go to the embedding client class where environment variables are initialized. After the verification process , it will then go to the create function where the search service that had been initialized before will create embeddings of the query asked using the model “text-embedding-3-small” . 
+It is a good practice to store the variables in local.settings.json file for security purposes and then using the inbuilt module “os” leveraging the benefit of interacting with the operating system as well as the environment variables. The next step is to query the documents present in the SharePoint link. 
+# Function to query documents from the SharePoint index
+def query_documents(query, department=None): 
+    search_endpoint = os.getenv('SEARCH_ENDPOINT'). 
+    search_key = os.getenv('SEARCH_API_KEY') 
+    index_name = os.getenv('INDEX_NAME') 
+    search_client = SearchClient(endpoint=search_endpoint, 
+                                 index_name=index_name, 
+                                 credential=AzureKeyCredential(search_key)) 
+This function is used to query the documents present in the SharePoint index by initializing the environment variables and then assigning those variables to a SearchClient class. AzureKeyCredentials class in Azure SDK helps with interaction and validation the azure credentials and it relies on API key for authentication of azure services in use. 
+    search_parameters = {
+                        "vector": { 
+                        "value": query, 
+                        "fields": "content_vector" 
+                        },
+                    }
+Then search parameters are initialized for perhaps vector querying the sharepoint index. The vector parameter has two sub parameters named “value” which is the query entered by the user , perhaps and the fields is “content_vector”. 
+ if department:
+        filter_param = f"Department eq '{department}'"
+        results = search_client.search(vector_queries= [vector_query],
+                    vector_filter_mode=VectorFilterMode.PRE_FILTER,
+                    filter=filter_param,
+                    top=10)
+    else:
+        results = search_client.search(  
+                    vector_queries= [vector_query],
+                    top=10
+                    )  
+
+The below part checks if there’s a department and is filtering out the department before sending it for vector search. Then the content received is stored in results variable. Both the parts are using filtered vector search. 
+ Else: 
+results = search_client.search(  
+                    vector_queries= [vector_query],
+                    top=10
+                    )  
+    documents = [] 
+    URLS = []  
+    Names = []   
+    for result in results
+        documents.append({   
+            "department": result.get('Department', ''), 
+            "content": result.get('content', 'No data Found')
+        })
+This then stores the documents, URLs and names of the document in the empty lists. Iterating through the results variable, we are appending the department name (if present, then the name is “Department”, else “” or none”), and then the content (if present then the content is retrieved, else “no data found). 
+        # Only append if the URL or Name is not already in the list to avoid duplicates
+        url = result.get('URL')
+        name = result.get('Name') 
+        if url and url not in URLS: 
+            URLS.append(url)  
+        if name and name not in Names: 
+            Names.append(name)  
+    # After the loop, you can append the URLs and Names lists to the documents
+    documents.append({ 
+        "URLs": URLS,  
+        "Names": Names })
+    return documents
+To not have repeated URLs and names displayed, only the ones which are not present will be appended to the list, to avoid duplicity of the documents. Then the documents is returned, terminating this function. 
+We then tell how the model behaves by giving a prompt and it is a multiline string: 
+prompt = """
+ You are an AI assistant that helps people find information from the context provided to you. You should only respond based on the information provided in the 'Context' below. If the context does not provide sufficient information to answer the query, respond with the message:  'No data is related to this query.'
+ Context:
+  ---
+ {content}
+  ---
+ """.format(content=documents)
+And we’re formatting the content of the response as the one from the documents. Then we’re telling what the model must do by giving it roles and content
+message_text = [
+ {'role': 'system', 'content': prompt}, 
+            {'role': 'user', 'content': str(query)}  # Use query directly, as it's the user's question
+        ]
+It checks if the user prompt is a string or not. If it’s not then it raises a value error saying that the prompt must be a string but the received format is of the type of what they entered. For example, if it is a number, a whole number then it’s the type num or int, etc. Formatted string is used such that the “type “of the prompt is rendered along with the message inside the string representation, instead of the output being : Prompt must be a string, but it is of type {type(prompt)}.
+        if not isinstance(prompt, str): # Ensure the prompt is indeed a string
+            raise ValueError(f"Prompt must be a string, but it is of type {type(prompt)}.")
+Then this will be sent to the gpt model that is being used i.e.., gpt-3.5-turbo-16k. 
+# Get GPT response using the same embedding_client
+ gpt_response = embedding_client.chat.completions.create(
+ model="gpt-35-turbo-16k",
+            messages=message_text,
+            temperature=0.3
+        )
+# Correctly access the response text
+assistant_response = gpt_response.choices[0].message.content if gpt_response.choices else None
+assistant_response = assistant_response.replace('\n', '<br>')  # Replace \n with a space
+        # If there's no relevant assistant response, provide a fallback message if not assistant_response:
+assistant_response = "I'm sorry, but I need more information or context in order to assist you. Could you please provide more details or specify what you need help with?"
+For GPT response, the same embedding_client class is called and then chat completions ai is used using the word create to which parameters such as model name, messages and temperature (otherwise called the randomness in simpler terms) are given. Temperature here is set to 0.3 as the model should respond in a deterministic manner instead of being creative. 
+If  there’s a response then it returns the response that has the content and if there’s no response then None and the escape character ‘/n’ in python is being replaced by ‘<br>’ tag such that the answers are in the form of paragraphs with equal spaces. 
+When the response is None, then it provides a fallback by returning the statement: "I'm sorry, but I need more information or context in order to assist you. Could you please provide more details or specify what you need help with?”. 
+Then the final response is called that will be rendered to the frontend. In the code given below response variable has a few other sub variables named response, error, urls and names. Strip() method is used to decrease the overhead computational load of extra spaces or unwanted characters. The last document that contains urls and names is also retrieved. 
+response = {
+            "response": assistant_response.strip(),
+            "error": None,
+            "URLs": documents[-1]['URLs'],  # Access the last document which contains URLs
+            "Names": documents[-1]['Names']  # Access the last document which contains Names
+        }
+It then returns a http response in a json format saying that the retrieving was successful and gives a status code of 200 (OK) with the mime type of json, signaling that the output of this whole process needs to be in the form of JSON. Headers is also passed as one of the parameters , it is set to ‘*’ indicating that all the origins are allowed. Other parameters such as methods and headers are allowed too, making it easier to link frontend and backend seamless (even postman interactions maybe, quite not sure about it). 
+
+        return HttpResponse(
+            json.dumps(response), 
+            status_code=200, 
+            mimetype="application/json",
+            headers={
+                "Access-Control-Allow-Origin": "*",  # Allow any origin (you can specify your frontend URL here)
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type"
+            }
+        )
+If there’s an error that occurred such as the backend server not working due to various reasons then this is rendered in the console and the front end to the user: 
+    except Exception as e:
+        logging.error(f"Error: {str(e)}")
+        return func.HttpResponse(
+            "An error occurred while querying the search index.",
+            status_code=500
+        )
+Logging is also an inbuilt module that helps in debugging and logging the status of each step and function happening in the code to the developer and an http response is rendered to the user as they do not need the logging error to be displayed. However,  headers are used in scenarios where:
+ Frontend and backend are hosted on different origins (e.g., different domains, ports, or subdomains).
+ Enable secure communication between the two while preventing unauthorized cross-origin requests.
+
+Now that the response is generated, now this control goes back to Java Script: 
+if (response.ok) {
+            // Parse JSON response
+            const data = await response.json();
+            console.log(data);  // Log the actual response body
+            // Hide loader after receiving response
+            document.getElementById("loader").style.display = "none";
+            document.getElementById("results").style.display = "block";
+            // Check if response contains data
+            if (data.response) {
+                displayResults(data.response, data.URLs, data.Names);  // Display the assistant response
+            } else {
+        document.getElementById("results").innerHTML = "<p>No relevant results found.</p>";
+     document.getElementById("greeting-message").innerHTML = "<p>Sorry! somthing went wrong</p>";
+        } else {
+            // Handle error if response is not OK
+            const errorData = await response.json();
+            alert(errorData.error || "An error occurred while fetching results.");
+            document.getElementById("loader").style.display = "none";
+        }
+    } catch (error) {
+        // Handle network or other error
+document.getElementById("greeting-message").innerHTML = "<p>Sorry! something went wrong</p>";
+ document.getElementById("loader").style.display = "none"
+    }
+});
+The above block of code handles both when the response is ok and when it’s not ok. When 
+the response is okay it will log the data to the console (which can be viewed when f12 is pressed and console tab is clicked) . The loader is hidden after the console receives the body of the response and from it the response body, url and name is extracted so that it can be displayed to the user, else the message that no answer found is displayed. 
+If at all there’s no response then it will render an alert saying that no answer was found. Other errors such as network and others are also caught, and an alert is rendered. 
+The result must be displayed to the user thus a function named displayResults is created with the parameters being results, urls and names. A variable named resultContainer is instantiated and the html element is brought in where these results are stored. After the validation and all, the results are appended to the results- container in html code as a child class. 
+
+function displayResults(result, documentUrls, documentNames) {
+    const resultsContainer = document.getElementById("results");
+    resultsContainer.innerHTML = ""; // Clear previous results
+It is then checking if the result is not found or there’s no result at all, then it renders the greeting message and the message in the results container that the results are not found. 
+    if (result=="NOTFOUND" ||!result) {
+        document.getElementById("greeting-message").innerHTML = "<p>Sorry! No Data Found</p>";
+        resultsContainer.innerHTML = "<p>No relevant results found.</p>";
+        return ; // Exit function if no results
+    } 
+The below code explains that when there’s a valid result that the backend has sent then javascript will create a separate div to display the result. However the code also explains that if the results are shown to the user, then the avatar on the top will thank the user.  
+    else {
+        // Create a div to show the result
+        const resultItem = document.createElement("div");
+        document.getElementById("greeting-message").innerHTML = "<p>Thankyou </p>";
+        resultItem.classList = "result-item";
+If the user selects the light mode on top right, then that will be rendered, and if not then dark mode will be rendered and the response  from the backend will then be appended to the resultsContainer and the format will be answer : {content}. 
+        if (document.body.classList.contains("light-mode")) {
+            resultItem.classList.add("light-mode");
+        }
+        else{
+            resultItem.classList.remove("light-mode")
+        }
+        resultItem.innerHTML = `
+            <h3>Answer:</h3>
+            <p>${result}</p>
+        `;
+        resultsContainer.appendChild(resultItem);
+As there should be links to the documents that also need to be provided, we’re checking if the documents and their links are valid or not. If it’s valid then it’s appended as a child class to the reference document section 
+   if (documentUrls && documentUrls.length > 0) {
+            // Create expandable reference document section
+            const refDocContainer = document.createElement("div");
+            refDocContainer.className = "reference-doc-container";
+            // Create clickable link for each document
+            documentUrls.forEach((url, index) => {
+                const documentLink = document.createElement("a");
+                documentLink.href = url;
+                documentLink.textContent = `${documentNames[index]}`;
+                documentLink.target = "_blank"; // Opens the document in a new tab
+                documentLink.className = "document-link"; // Optional class for styling
+                // Append to reference document container
+                refDocContainer.appendChild(documentLink);
+            });
+This is for the reference documents section. This is expandable as in while rendering the response from the backend, this section that contains the related documents will also be rendered and when the user clicks on the reference document link, then it will display the list of the related documents for the query asked and each document is a clickable link thus when the user clicks on that, they’re lead to the chrome version of the document. That’s what the code below does. 
+// Create a section that can expand/collapse
+            const expandSection = document.createElement("div");
+            expandSection.className = "expandable-section";
+            expandSection.innerHTML = `
+                <p class="reference-text"><a>Reference Documents</a></p>
+                <div class="expandable-content" style="display:none;">
+                    ${documentUrls.map((url, index) => {
+                        return `
+                            <p><a href="${url}" target="_blank">${documentNames[index]}</a></p>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+            // Append the expandable section to the results
+            resultItem.appendChild(expandSection);
+     expandSection.querySelector('.reference-text').addEventListener('click', function() {
+                const content = expandSection.querySelector('.expandable-content');
+                const referenceText = expandSection.querySelector('.reference-text a');
+                if (content.style.display === "none") {
+                    content.style.display = "block";
+                    referenceText.textContent = "Hide Reference Documents";
+                } else {
+                    content.style.display = "none";
+                    referenceText.textContent = "Reference Documents";
+                }
+            });
+        } } }
+
+This code toggles a webpage's theme between light and dark modes when a button is clicked. It adds or removes the light-mode class on various elements (e.g., body, navbar, search bar) to apply corresponding CSS styles. The button's icon dynamically updates to "🌙" for light mode and "🌞" for dark mode. The code is given below: 
+document.getElementById("theme-toggle-btn").addEventListener("click", function() { 
+    // Toggle the theme
+    document.body.classList.toggle("light-mode");
+    document.querySelector(".search-container").classList.toggle("light-mode");
+    document.querySelector(".navbar").classList.toggle("light-mode");
+    document.querySelector(".search-bar").classList.toggle("light-mode");
+    document.querySelector("#query").classList.toggle("light-mode");
+    document.querySelector("#department").classList.toggle("light-mode");
+    document.querySelector("#search-btn").classList.toggle("light-mode");
+    document.querySelector("#results").classList.toggle("light-mode");
+    document.querySelector(".result-item").classList.toggle("light-mode");
+    document.querySelector(".avatar-container").classList.toggle("light-mode");
+
+    // Change the icon of the button depending on the mode
+    if (document.body.classList.contains("light-mode")) {
+        document.getElementById("theme-toggle-btn").textContent = "🌙";  // Light mode icon
+    } else {
+        document.getElementById("theme-toggle-btn").textContent = "🌞";  // Dark mode icon
+    }
+});
+
+Extra information: 
+Get vs Fetch: 
+The terms get and fetch often appear in web development but are used in different contexts. Here’s a clear breakdown of their differences:
+
+1. HTTP GET Method
+Refers to an HTTP method used in APIs or web communication to retrieve data from a server.
+It is one of the standard methods in RESTful APIs.
+Key Characteristics:
+Purpose: Retrieve data from a server without modifying it.
+Stateless: Does not affect the server’s state.
+Parameters: Often uses query strings in the URL to pass data (e.g., https://api.example.com/users?id=123).
+Caching: Browsers and servers can cache responses to reduce network load.
+Example with Python:
+import requests
+
+response = requests.get("https://api.example.com/data")
+print(response.json())
+Example with JavaScript (Fetch API):
+fetch("https://api.example.com/data")
+    .then(response => response.json())
+    .then(data => console.log(data));
+
+2. fetch (JavaScript API)
+Refers to the Fetch API, a modern JavaScript interface for making HTTP requests.
+It can handle all HTTP methods, including GET, POST, PUT, etc.
+Key Characteristics:
+Purpose: To make network requests in JavaScript (not limited to GET).
+Built-In: Available natively in modern browsers.
+Flexible: Supports options like headers, body, and request method.
+Promise-Based: Returns a Promise for asynchronous handling.
+Customizable: You can use it for advanced scenarios (e.g., handling POST requests, adding authentication, etc.).
+Example of Fetching Data (GET Request):
+fetch("https://api.example.com/data")
+    .then(response => response.json())
+    .then(data => console.log(data))
+    .catch(error => console.error("Error:", error));
+Example of Sending Data (POST Request):
+fetch("https://api.example.com/data", {
+    method: "POST",
+    headers: {
+        "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ name: "John", age: 30 })
+})
+    .then(response => response.json())
+    .then(data => console.log(data))
+    .catch(error => console.error("Error:", error));
+
+Key Differences:
+Aspect	HTTP GET	Fetch API
+Definition	An HTTP method to request data.	A JavaScript API to make HTTP requests.
+Scope	Limited to retrieving resources.	Can handle all HTTP methods (GET, POST, etc.).
+Usage	Used in RESTful APIs for data retrieval.	Used in frontend code for making requests.
+Customization	Not inherently customizable.	Highly customizable with options like headers, body, etc.
+Language	HTTP method (used in any programming language).	JavaScript-specific API.
+
+Quick Analogy:
+GET is like asking a librarian for a specific book (retrieving data).
+fetch is the method you use to communicate with the librarian (how you send and receive requests).
+Let me know if you'd like further clarification!
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+

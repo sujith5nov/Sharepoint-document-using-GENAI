@@ -1,1 +1,0 @@
-# Sharepoint-document-using-GENAI
